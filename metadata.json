@@ -1,0 +1,12 @@
+{
+  "name": "BakeSync SaaS",
+  "description": "A real-time multi-tenant Bakery Production & Dealer Order Management system with sound-triggered workflow automation.",
+  "requestFramePermissions": ["geolocation", "camera"],
+  "majorCapabilities": [
+    "multi-tenant",
+    "real-time-updates",
+    "role-based-access",
+    "automated-alerts",
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,352 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isSignedIn() { return request.auth != null; }
+    
+    function isSuperAdmin() { 
+      return isSignedIn() && (
+        (request.auth.token.email != null && request.auth.token.email == 'sehgalbalpreet@gmail.com') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // 0. Global Super Admin Override - MUST be first
+    match /{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function getProfile() { 
+      // Safe check to avoid rule errors if doc doesn't exist
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function profileExists() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    
+    function belongsToBakery(bakeryId) { 
+      return isSuperAdmin() || (
+        profileExists() && 
+        'bakeryId' in getProfile() && 
+        getProfile().bakeryId == bakeryId
+      );
+    }
+
+    function isValidBakery(data) {
+      return data.keys().hasAll(['name', 'trialStartedAt', 'subscriptionStatus', 'adminEmail']) &&
+             data.name is string && data.name.size() <= 100 &&
+             data.subscriptionStatus in ['trial', 'active', 'expired', 'free_partner', 'suspended'] &&
+             data.adminEmail is string && data.adminEmail.size() <= 100;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'role', 'bakeryId', 'displayName']) &&
+             (data.role == 'super_admin' || data.role == 'bakery_admin' || data.role == 'production' || 
+              data.role == 'dealer' || data.role == 'dealer_admin' || data.role == 'dealer_staff' || 
+              data.role == 'sales' || data.role == 'disabled' || data.role == 'chocolate_production') &&
+             data.bakeryId is string &&
+             data.displayName is string && data.displayName.size() <= 100;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['bakeryId', 'type', 'status', 'createdAt']) &&
+             data.bakeryId is string &&
+             data.type in ['dealer_cake', 'custom_cake', 'chocolate'] &&
+             data.status in ['pending', 'received', 'in_progress', 'ready', 'sent', 'cancelled'] &&
+             data.createdAt == request.time;
+    }
+
+    function isValidMenuItem(data) {
+      return data.keys().hasAll(['bakeryId', 'name', 'category', 'price', 'gstPercent']) &&
+             data.bakeryId is string &&
+             data.name is string && data.name.size() <= 100 &&
+             data.category is string &&
+             data.price is number &&
+             data.gstPercent is number;
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['bakeryId', 'name', 'phone']) &&
+             data.bakeryId is string &&
+             data.name is string &&
+             data.phone is string;
+    }
+
+    function isValidRecipe(data) {
+      return data.keys().hasAll(['bakeryId', 'name', 'ingredients', 'instructions', 'createdAt']) &&
+             data.bakeryId is string &&
+             data.name is string && data.name.size() <= 100 &&
+             data.ingredients is list &&
+             data.instructions is list;
+    }
+
+    // 1. Bakeries
+    match /bakeries/{bakeryId} {
+      allow get: if true; // Allows public lookup during feedback rating and login
+      allow list: if isSignedIn(); // Allows login lookup by phone
+      allow create: if isSignedIn();
+      allow update: if isSuperAdmin() || (belongsToBakery(bakeryId) && profileExists() && getProfile().role == 'bakery_admin' && incoming().diff(existing()).affectedKeys().hasOnly(['settings', 'notificationSettings', 'isDeleted', 'deactivatedAt', 'status', 'subscriptionStatus', 'plan', 'subscriptionEndsAt', 'updatedAt']));
+    }
+
+    // 2. Users
+    match /users/{userId} {
+      allow get: if isSignedIn() && (
+        request.auth.uid == userId || 
+        isSuperAdmin() || 
+        (resource != null && 'bakeryId' in resource.data && resource.data.bakeryId != null && belongsToBakery(resource.data.bakeryId)) ||
+        // Identification lookup by phone (allows getDocs during login)
+        (resource != null && 'phone' in resource.data && resource.data.phone != null)
+      );
+      allow list: if isSignedIn(); // Filtered by query
+      allow create: if isSignedIn() && (
+        (incoming().uid == request.auth.uid && incoming().role != 'super_admin') || 
+        (profileExists() && getProfile().role == 'bakery_admin' && incoming().bakeryId == getProfile().bakeryId) ||
+        isSuperAdmin()
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() || 
+        // User can update their own profile fields for login sync or basic info
+        (request.auth.uid == userId && incoming().role != 'super_admin') ||
+        (profileExists() && getProfile().role == 'bakery_admin' && (existing().bakeryId == getProfile().bakeryId || isSuperAdmin()) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['role', 'dealerId', 'pin', 'displayName', 'phone', 'bakeryId', 'uid', 'email', 'updatedAt', 'customCakeDiscount', 'isDeleted', 'deletedAt', 'lastLogin', 'baseSalary', 'overtimeRate', 'faceDescriptor', 'faceEnrolledAt']))
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() || 
+        (profileExists() && getProfile().role == 'bakery_admin' && (
+          resource == null ||
+          !('bakeryId' in resource.data) || 
+          resource.data.bakeryId == null || 
+          resource.data.bakeryId == "" || 
+          resource.data.bakeryId == getProfile().bakeryId ||
+          // Or if it's a non-admin duplicate/stray account that needs to be purged to restore access
+          (!('role' in resource.data) || resource.data.role == null || resource.data.role == "" || (resource.data.role != 'bakery_admin' && resource.data.role != 'super_admin'))
+        ))
+      );
+    }
+
+    // 2.2 PIN Sessions
+    match /sessions/{sessionId} {
+      allow get: if isSignedIn() && request.auth.uid == sessionId;
+      allow create: if isSignedIn() && request.auth.uid == sessionId;
+      allow update: if isSignedIn() && request.auth.uid == sessionId;
+      allow delete: if isSignedIn() && request.auth.uid == sessionId;
+    }
+
+    // 2.1 System Logs
+    match /system_logs/{logId} {
+      allow read: if isSuperAdmin();
+      allow create: if isSignedIn();
+    }
+
+    // 3. Dealers
+    match /dealers/{dealerId} {
+      allow get: if isSignedIn() && (request.auth.uid == dealerId || resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) || isSuperAdmin());
+      allow list: if isSignedIn() && (isSuperAdmin() || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow create: if isSignedIn() && (
+        isSuperAdmin() || 
+        (profileExists() && getProfile().role == 'bakery_admin' && getProfile().bakeryId == incoming().bakeryId) ||
+        (request.auth.uid == dealerId && profileExists() && incoming().bakeryId == getProfile().bakeryId) ||
+        (profileExists() && getProfile().dealerId == dealerId && incoming().bakeryId == getProfile().bakeryId)
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() || 
+        (profileExists() && getProfile().role == 'bakery_admin' && (getProfile().bakeryId == existing().bakeryId || isSuperAdmin()) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['staffName', 'companyName', 'phone', 'email', 'customCakeDiscount', 'isDeleted', 'deletedAt', 'active', 'lastOrderSequence', 'updatedAt', 'orderPrefix'])) ||
+        (profileExists() && getProfile().dealerId == dealerId && incoming().diff(existing()).affectedKeys().hasOnly(['lastOrderSequence', 'updatedAt'])) ||
+        (request.auth.uid == dealerId && incoming().diff(existing()).affectedKeys().hasOnly(['lastOrderSequence', 'updatedAt']))
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() || 
+        (profileExists() && getProfile().role == 'bakery_admin')
+      );
+    }
+
+    // 4. Orders
+    match /orders/{orderId} {
+      allow get: if isSignedIn() && (isSuperAdmin() || resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow list: if isSignedIn() && (
+        isSuperAdmin() || (
+          resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId) && (
+            // Bakery staff can see all orders for their bakery
+            (profileExists() && getProfile().role in ['bakery_admin', 'production', 'sales', 'chocolate_production']) || 
+            // Restricted users (dealers, etc.) only see their own
+            // Use request.auth.uid directly for better performance and reliability on mobile
+            ('dealerId' in resource.data && resource.data.dealerId == request.auth.uid) || 
+            (profileExists() && 'dealerId' in getProfile() && getProfile().dealerId != null && 'dealerId' in resource.data && resource.data.dealerId == getProfile().dealerId)
+          )
+        )
+      );
+      
+      allow create: if isSignedIn() && isValidOrder(incoming()) && belongsToBakery(incoming().bakeryId);
+      
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId) && (
+          // Production/Admin can update status and metadata
+          (profileExists() && getProfile().role in ['bakery_admin', 'production', 'chocolate_production', 'sales', 'super_admin'] && (
+            // Verify it's a status update OR some other staff-only action
+            (incoming().diff(existing()).affectedKeys().hasAny(['status', 'updatedAt', 'receivedAt', 'receivedBy', 'inProgressAt', 'inProgressBy', 'readyAt', 'readyBy', 'sentAt', 'sentBy', 'cancelledAt', 'cancelledBy', 'cancelledReason', 'problemDetails'])) &&
+            // Allow transitions
+            (
+              (incoming().status == 'cancelled') || // Allow cancellation from any state
+              (existing().status == 'pending' && (incoming().status == 'received' || incoming().status == 'in_progress')) ||
+              (existing().status == 'received' && incoming().status == 'in_progress') ||
+              (existing().status == 'in_progress' && incoming().status == 'ready') ||
+              (existing().status == 'ready' && incoming().status == 'sent') ||
+              (existing().status == incoming().status) // Allow metadata updates without status change
+            )
+          )) ||
+          // Admin can update more fields (like totalAmount)
+          (profileExists() && getProfile().role == 'bakery_admin' && (incoming().diff(existing()).affectedKeys().hasAny(['totalAmount', 'discount', 'gstPercent', 'customerDetails']))) ||
+          // Dealers can acknowledge problems or cancel their own pending/reported-as-problem orders
+          (
+            (existing().dealerId == request.auth.uid || (profileExists() && getProfile().dealerId != null && existing().dealerId == getProfile().dealerId)) && (
+              // Allow acknowledging problem or resolution
+              (incoming().diff(existing()).affectedKeys().hasOnly(['problemSeenByDealer', 'cancelSeenByDealer', 'updatedAt', 'problemDetails'])) ||
+              // Allow cancellation if there is a problem or it is still pending
+              (incoming().status == 'cancelled' && (existing().status == 'pending' || existing().problemDetails != null) && 
+               incoming().diff(existing()).affectedKeys().hasOnly(['status', 'cancelledAt', 'cancelledBy', 'cancelledReason', 'problemDetails', 'problemSeenByDealer', 'cancelSeenByDealer', 'updatedAt'])) ||
+               // Allow simple acknowledgement (one field)
+               (incoming().diff(existing()).affectedKeys().hasOnly(['problemSeenByDealer', 'cancelSeenByDealer', 'updatedAt']))
+            )
+          )
+        ))
+      );
+
+      allow delete: if isSignedIn() && (isSuperAdmin() || (profileExists() && getProfile().role == 'bakery_admin' && getProfile().bakeryId == resource.data.bakeryId));
+    }
+
+    // 5. Admins
+    match /admins/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.token.email == 'sehgalbalpreet@gmail.com';
+    }
+
+    // 6. Menu Items
+    match /menu_items/{itemId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow create: if isSignedIn() && (isSuperAdmin() || (belongsToBakery(incoming().bakeryId) && profileExists() && getProfile().role == 'bakery_admin' && isValidMenuItem(incoming())));
+      allow update: if isSignedIn() && (isSuperAdmin() || (belongsToBakery(existing().bakeryId) && profileExists() && getProfile().role == 'bakery_admin' && incoming().diff(existing()).affectedKeys().hasOnly(['bakeryId', 'name', 'category', 'price', 'gstPercent', 'hsnCode', 'imageUrl', 'description', 'weight', 'isDeleted', 'deletedAt'])));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (belongsToBakery(existing().bakeryId) && profileExists() && getProfile().role == 'bakery_admin'));
+    }
+
+    // 7. Customers CRM
+    match /customers/{customerId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow write: if isSignedIn() && (isSuperAdmin() || ( (incoming() != null && 'bakeryId' in incoming() && belongsToBakery(incoming().bakeryId) && profileExists() && getProfile().role == 'bakery_admin' && isValidCustomer(incoming())) || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId) && profileExists() && getProfile().role == 'bakery_admin' && isValidCustomer(incoming())) ));
+    }
+
+    // 8. Archives (Restore Points)
+    match /archives/{archiveId} {
+      allow read: if isSuperAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // 9. App Config (Version Control)
+    match /appConfig/{configId} {
+      allow read: if true; // Publicly readable for version checking
+      allow write: if isSuperAdmin();
+    }
+
+    // 10. Attendance & Payroll
+    match /attendance/{recordId} {
+      allow read: if isSignedIn() && (resource == null || (resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) || isSuperAdmin());
+      allow create: if isSignedIn() && (incoming().userId == request.auth.uid || belongsToBakery(incoming().bakeryId));
+      allow update: if isSignedIn() && ((resource != null && 'userId' in resource.data && resource.data.userId == request.auth.uid) || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) || isSuperAdmin());
+    }
+
+    match /payroll/{recordId} {
+      allow read: if isSignedIn() && (resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) || isSuperAdmin());
+      allow write: if isSignedIn() && (isSuperAdmin() || (profileExists() && getProfile().role == 'bakery_admin' && ( (incoming() != null && 'bakeryId' in incoming() && belongsToBakery(incoming().bakeryId)) || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) )));
+    }
+
+    // 11. Recipes
+    match /recipes/{recipeId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow create: if isSignedIn() && (isSuperAdmin() || (belongsToBakery(incoming().bakeryId) && profileExists() && (getProfile().role in ['bakery_admin', 'production', 'chocolate_production', 'sales']) && isValidRecipe(incoming())));
+      allow update: if isSignedIn() && (isSuperAdmin() || (belongsToBakery(existing().bakeryId) && profileExists() && (getProfile().role in ['bakery_admin', 'production', 'chocolate_production', 'sales']) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'category', 'prepTime', 'bakingTime', 'yield', 'ingredients', 'instructions', 'allergenInfo', 'aiTips', 'nutrition', 'updatedAt'])));
+      allow delete: if isSignedIn() && (isSuperAdmin() || (belongsToBakery(resource.data.bakeryId) && profileExists() && getProfile().role == 'bakery_admin'));
+    }
+
+    // 12. Dragees & Team Batch Production
+    match /dragees_cost_setups/{setupId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow write: if isSignedIn() && (isSuperAdmin() || ( (incoming() != null && 'bakeryId' in incoming() && belongsToBakery(incoming().bakeryId)) || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) ));
+    }
+
+    match /dragees_batches/{batchId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow write: if isSignedIn() && (isSuperAdmin() || ( (incoming() != null && 'bakeryId' in incoming() && belongsToBakery(incoming().bakeryId)) || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) ));
+    }
+
+    match /production_tracking/{trackingId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow write: if isSignedIn() && (isSuperAdmin() || ( (incoming() != null && 'bakeryId' in incoming() && belongsToBakery(incoming().bakeryId)) || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) ));
+    }
+
+    match /dragees_price_list/{priceId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow write: if isSignedIn() && (isSuperAdmin() || ( (incoming() != null && 'bakeryId' in incoming() && belongsToBakery(incoming().bakeryId)) || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) ));
+    }
+
+    match /batch_production_logs/{logId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow write: if isSignedIn() && (isSuperAdmin() || ( (incoming() != null && 'bakeryId' in incoming() && belongsToBakery(incoming().bakeryId)) || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) ));
+    }
+
+    match /corporate_chocolate_quotes/{quoteId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || resource == null || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)));
+      allow write: if isSignedIn() && (isSuperAdmin() || ( (incoming() != null && 'bakeryId' in incoming() && belongsToBakery(incoming().bakeryId)) || (resource != null && 'bakeryId' in resource.data && belongsToBakery(resource.data.bakeryId)) ));
+    }
+
+    // 13. Payment Settings
+    match /payment_settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    // 14. Notifications
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && (resource == null || !('bakeryId' in resource.data) || belongsToBakery(resource.data.bakeryId));
+      allow write: if isSignedIn() && (incoming() == null || !('bakeryId' in incoming()) || belongsToBakery(incoming().bakeryId));
+    }
+
+    // 15. Signup Requests
+    match /signup_requests/{requestId} {
+      allow read: if isSuperAdmin();
+      allow create: if true; // Public access
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // 16. Logs
+    match /logs/{logId} {
+      allow read: if isSuperAdmin();
+      allow create: if isSignedIn();
+    }
+
+    // 17. Monthly Costs
+    match /monthly_costs/{costId} {
+      allow read: if isSignedIn() && (resource == null || !('bakeryId' in resource.data) || belongsToBakery(resource.data.bakeryId));
+      allow write: if isSignedIn() && (incoming() == null || !('bakeryId' in incoming()) || belongsToBakery(incoming().bakeryId));
+    }
+
+    // 18. Expenses
+    match /expenses/{expenseId} {
+      allow read: if isSignedIn() && (resource == null || !('bakeryId' in resource.data) || belongsToBakery(resource.data.bakeryId));
+      allow write: if isSignedIn() && (incoming() == null || !('bakeryId' in incoming()) || belongsToBakery(incoming().bakeryId));
+    }
+
+    // 19. Customer Feedback
+    match /customer_feedback/{feedbackId} {
+      allow create: if true; // Public customers can submit ratings
+      allow read, update, delete: if isSignedIn() && (resource == null || !('bakeryId' in resource.data) || belongsToBakery(resource.data.bakeryId));
+    }
+  }
+}
+

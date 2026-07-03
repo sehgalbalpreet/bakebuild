@@ -1,0 +1,309 @@
+{
+  "entities": {
+    "Bakery": {
+      "title": "Bakery",
+      "description": "A bakery tenant in the system.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "trialStartedAt": { "type": "string", "format": "date-time" },
+        "trialEndDate": { "type": "string", "format": "date-time" },
+        "subscriptionStatus": { "type": "string", "enum": ["trial", "active", "expired", "pending_verification"] },
+        "subscriptionPlan": { "type": "string" },
+        "paymentScreenshotUrl": { "type": "string" },
+        "paymentUploadedAt": { "type": "string", "format": "date-time" },
+        "adminEmail": { "type": "string" },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "whatsappNumber": { "type": "string" },
+            "googleReviewLink": { "type": "string" }
+          }
+        }
+      },
+      "required": ["name", "trialStartedAt", "subscriptionStatus", "adminEmail"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User account details and roles.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["super_admin", "bakery_admin", "production", "dealer", "sales", "chocolate_production"] },
+        "bakeryId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "dealerId": { "type": "string" }
+      },
+      "required": ["uid", "role", "bakeryId", "displayName"]
+    },
+    "Dealer": {
+      "title": "Dealer",
+      "description": "A dealer associated with a bakery.",
+      "type": "object",
+      "properties": {
+        "bakeryId": { "type": "string" },
+        "companyName": { "type": "string" },
+        "phone": { "type": "string" },
+        "staffName": { "type": "string" }
+      },
+      "required": ["bakeryId", "companyName", "phone", "staffName"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "An order placed for bakery items.",
+      "type": "object",
+      "properties": {
+        "bakeryId": { "type": "string" },
+        "dealerId": { "type": "string" },
+        "dealerCompanyName": { "type": "string" },
+        "type": { "type": "string", "enum": ["dealer_cake", "custom_cake", "chocolate"] },
+        "status": { "type": "string", "enum": ["pending", "received", "in_progress", "ready", "sent"] },
+        "quoteTag": { "type": "string", "enum": ["DESIGN QUOTE PENDING", "QUOTE SENT — AWAITING CONFIRM", "CONFIRMED", "DECLINED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "receivedAt": { "type": "string", "format": "date-time" },
+        "readyAt": { "type": "string", "format": "date-time" },
+        "sentAt": { "type": "string", "format": "date-time" },
+        "totalAmount": { "type": "number" },
+        "advanceReceived": { "type": "number" },
+        "designQuote": { "$ref": "#/entities/DesignQuote" },
+        "isQuoteLocked": { "type": "boolean" },
+        "cancelSeenByDealer": { "type": "boolean" }
+      },
+      "required": ["bakeryId", "type", "status", "createdAt"]
+    },
+    "DesignQuote": {
+      "title": "Design Quote",
+      "description": "Detailed costing breakdown for custom cake designs.",
+      "type": "object",
+      "properties": {
+        "fondantType": { "type": "string", "enum": ["none", "half", "full"] },
+        "fondantCost": { "type": "number" },
+        "tierSelected": { "type": "integer" },
+        "tierSource": { "type": "string", "enum": ["ai", "admin"] },
+        "characters": {
+          "type": "object",
+          "properties": {
+            "small": { "type": "integer" },
+            "large": { "type": "integer" },
+            "cost": { "type": "number" }
+          }
+        },
+        "flowers": {
+          "type": "object",
+          "properties": {
+            "fondant": { "type": "integer" },
+            "real": { "type": "integer" },
+            "procurementIncluded": { "type": "boolean" },
+            "cost": { "type": "number" }
+          }
+        },
+        "complexityItems": { "type": "array", "items": { "type": "string" } },
+        "surchargePercent": { "type": "number" },
+        "surchargeAmount": { "type": "number" },
+        "rushCharge": { "type": "number" },
+        "basePrice": { "type": "number" },
+        "marketPrice": { "type": "number" },
+        "finalQuote": { "type": "number" },
+        "negotiationFloor": { "type": "number" },
+        "profitIndicator": { "type": "string", "enum": ["high", "safe", "risky"] }
+      }
+    },
+    "MenuItem": {
+      "title": "Menu Item",
+      "description": "A product offered by a bakery.",
+      "type": "object",
+      "properties": {
+        "bakeryId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string", "enum": ["cake", "chocolate", "other"] },
+        "price": { "type": "number" },
+        "gstPercent": { "type": "number" },
+        "hsnCode": { "type": "string" },
+        "imageUrl": { "type": "string" }
+      },
+      "required": ["bakeryId", "name", "category", "price", "gstPercent"]
+    },
+    "SystemLog": {
+      "title": "System Log",
+      "description": "A record of a system event or user action.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "bakeryId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "metadata": { "type": "object" }
+      },
+      "required": ["type", "message", "timestamp"]
+    },
+    "Archive": {
+      "title": "Archive",
+      "description": "A restore point containing a snapshot of a document before it was modified or deleted.",
+      "type": "object",
+      "properties": {
+        "originalCollection": { "type": "string" },
+        "documentId": { "type": "string" },
+        "data": { "type": "object" },
+        "archivedAt": { "type": "string", "format": "date-time" },
+        "archivedBy": { "type": "string" },
+        "reason": { "type": "string", "enum": ["delete", "update"] }
+      },
+      "required": ["originalCollection", "documentId", "data", "archivedAt", "archivedBy", "reason"]
+    },
+    "AppConfig": {
+      "title": "App Config",
+      "description": "Global application settings",
+      "type": "object",
+      "properties": {
+        "currentVersion": { "type": "string" },
+        "forceUpdate": { "type": "boolean" },
+        "updateMessage": { "type": "string" }
+      }
+    },
+    "PaymentSettings": {
+      "title": "Payment Settings",
+      "description": "Global payment gateway settings for PhonePe.",
+      "type": "object",
+      "properties": {
+        "phonePeUpiId": { "type": "string" },
+        "phonePeMerchantName": { "type": "string" },
+        "plans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "price": { "type": "number" },
+              "durationDays": { "type": "integer" },
+              "description": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "Recipe": {
+      "title": "Recipe",
+      "description": "A saved recipe for a bakery, optionally generated or assisted by AI.",
+      "type": "object",
+      "properties": {
+        "bakeryId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "prepTime": { "type": "string" },
+        "bakingTime": { "type": "string" },
+        "yield": { "type": "string" },
+        "ingredients": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "amount": { "type": "number" },
+              "unit": { "type": "string" }
+            },
+            "required": ["name", "amount", "unit"]
+          }
+        },
+        "instructions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "allergenInfo": { "type": "string" },
+        "aiTips": { "type": "string" },
+        "nutrition": {
+          "type": "object",
+          "properties": {
+            "calories": { "type": "number" },
+            "protein": { "type": "number" },
+            "carbs": { "type": "number" },
+            "fat": { "type": "number" },
+            "fiber": { "type": "number" },
+            "sugar": { "type": "number" },
+            "servingSize": { "type": "string" }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["bakeryId", "name", "ingredients", "instructions", "createdAt"]
+    },
+    "BatchProductionLog": {
+      "title": "Batch Production Log",
+      "description": "Log of batches completed by the production team for chocolates or dragees.",
+      "type": "object",
+      "properties": {
+        "bakeryId": { "type": "string" },
+        "batchNumber": { "type": "string" },
+        "productType": { "type": "string", "enum": ["chocolate", "dragees"] },
+        "productName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string" },
+        "date": { "type": "string" },
+        "loggedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bakeryId", "batchNumber", "productType", "productName", "quantity", "unit", "date", "loggedBy", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/bakeries/{bakeryId}": {
+      "schema": "Bakery",
+      "description": "Stores bakery tenant information."
+    },
+    "/batch_production_logs/{logId}": {
+      "schema": "BatchProductionLog",
+      "description": "Stores manual production batch logs entered by the team."
+    },
+    "/payment_settings/phonepe": {
+      "schema": "PaymentSettings",
+      "description": "Stores PhonePe payment gateway configuration."
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user profiles."
+    },
+    "/system_logs/{logId}": {
+      "schema": "SystemLog",
+      "description": "Stores audit logs of system activity."
+    },
+    "/dealers/{dealerId}": {
+      "schema": "Dealer",
+      "description": "Stores dealer information."
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Stores orders."
+    },
+    "/menu_items/{itemId}": {
+      "schema": "MenuItem",
+      "description": "Stores bakery products catalog."
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Stores client profile for CRM."
+    },
+    "/recipes/{recipeId}": {
+      "schema": "Recipe",
+      "description": "Stores secure bakery recipes, accessible only to the bakery members."
+    },
+    "/admins/{userId}": {
+      "schema": { "type": "object", "properties": { "email": { "type": "string" } } },
+      "description": "Explicit list of super admins."
+    },
+    "/archives/{archiveId}": {
+      "schema": "Archive",
+      "description": "Stores document snapshots for restoration."
+    },
+    "/appConfig/{configId}": {
+      "schema": "AppConfig",
+      "description": "Global application configuration and version control"
+    }
+  }
+}
