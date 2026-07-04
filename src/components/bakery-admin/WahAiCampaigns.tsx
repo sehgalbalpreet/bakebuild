@@ -82,7 +82,7 @@ const MESSAGING_TEMPLATES = {
     {
       id: 'sms_geo',
       name: '📍 Geo-Proximity Flash Sale',
-      text: 'KR_CHOC: Hey {{name}}! We are baking fresh cookies right now at Koramangala! Stop by in the next 1 hour & get 1-on-1 free. Show SMS. Map: https://g.co/kc'
+      text: 'KR_CHOC: Hey {{name}}! Fresh bakes just out of the oven at Kreative Chocolates, Chandigarh! Visit us today & get 1 FREE treat. Show this SMS. Visit: kreativechocolates.com'
     },
     {
       id: 'sms_loyalty',
@@ -127,13 +127,19 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
   const [isSending, setIsSending] = useState(false);
   const [sendProgress, setSendProgress] = useState(0);
   const [showChannelSettings, setShowChannelSettings] = useState(false);
+
+  // Pending Honest Campaign dispatch modal states
+  const [pendingCampaignId, setPendingCampaignId] = useState<string | null>(null);
+  const [pendingCampaignAudience, setPendingCampaignAudience] = useState<Customer[]>([]);
+  const [pendingCampaignMessage, setPendingCampaignMessage] = useState('');
+  const [showDispatchModal, setShowDispatchModal] = useState(false);
   
   // Automation workflows
   const [workflows, setWorkflows] = useState([
     { id: 'wf1', name: 'Dormant Retargeting Autopilot (WhatsApp)', trigger: 'No order in 45 Days', action: 'Send 20% Discount Code', active: true, channel: 'whatsapp' },
     { id: 'wf2', name: 'Milestone Anniversary Greeting (SMS)', trigger: 'Wedding anniversary tomorrow', action: 'Send Complimentary Macarons offer', active: false, channel: 'sms' },
     { id: 'wf3', name: 'Top Spender Exclusive Invite (Email)', trigger: 'LTV exceeds ₹10,000', action: 'Invite to Chocolate-Tasting Workshop', active: true, channel: 'email' },
-    { id: 'wf4', name: 'Geo-Triggered Proximity Alert', trigger: 'Enters 1.5km Koramangala Store', action: 'Send Live Cookie Alert', active: false, channel: 'whatsapp' }
+    { id: 'wf4', name: 'Geo-Triggered Proximity Alert', trigger: 'Enters 1.5km of Bakery Location', action: 'Send Live Cookie Alert', active: false, channel: 'whatsapp' }
   ]);
 
   // Active subtab
@@ -144,7 +150,7 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
   const [aiPersona, setAiPersona] = useState<'sales' | 'support' | 'custom'>('sales');
   const [aiTemp, setAiTemp] = useState<number>(0.7);
   const [aiInstructions, setAiInstructions] = useState(
-    'You are a friendly AI Assistant for Kreative Chocolates bakery in Bangalore. You help clients view menus, place pastry orders, recommend customized birthday cakes, and answer delivery details. Be sweet and professional.'
+    'You are a friendly AI Assistant for Kreative Chocolates, a premium bakery in Chandigarh. You help clients view menus, place custom cake orders, recommend birthday and wedding cakes, and answer delivery questions.'
   );
   const [aiChatInput, setAiChatInput] = useState('');
   const [aiChatMessages, setAiChatMessages] = useState<Array<{ sender: 'user' | 'agent'; text: string; time: string }>>([
@@ -188,7 +194,7 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
       } else if (lower.includes('price') || lower.includes('cost') || lower.includes('how much')) {
         response = "Our custom premium cakes start at ₹1,200/kg, and a box of our signature Belgian Chocolate Dragees is ₹550. Let me know if you would like me to draft an order link!";
       } else if (lower.includes('delivery') || lower.includes('where') || lower.includes('location')) {
-        response = "We deliver across Bangalore (up to 15km from Koramangala 4th Block!). Free delivery is unlocked on all orders above ₹1,500.";
+        response = "We deliver across Chandigarh, Mohali, and Panchkula (up to 15km). Free delivery on orders above ₹1,500.";
       } else if (lower.includes('birthday') || lower.includes('party') || lower.includes('anniversary')) {
         response = "Happy celebrations! 🎉 We can craft stunning customized designer cakes. You can redeem your ₹500 discount directly through this thread.";
       }
@@ -385,7 +391,7 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
     setCtaUrl('');
   }, [channel]);
 
-  // Launch campaign broadcast simulation
+  // Launch campaign broadcast (Honest flow: Save as draft and trigger manual dispatch/CSV options)
   const handleLaunchCampaign = async () => {
     if (!bakery?.id) return;
     if (!campaignName.trim()) {
@@ -402,88 +408,127 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
     }
 
     setIsSending(true);
-    setSendProgress(5);
+    try {
+      const count = targetAudience.length;
 
-    // Simulate real-time dispatch sequence progress
-    const steps = Math.min(10, targetAudience.length);
-    const intervalTime = Math.max(150, 2000 / steps);
-    
-    let currentStep = 0;
-    const progressTimer = setInterval(() => {
-      currentStep++;
-      const percent = Math.round((currentStep / steps) * 90) + 5;
-      setSendProgress(percent);
-      if (currentStep >= steps) {
-        clearInterval(progressTimer);
-        finalizeCampaign();
-      }
-    }, intervalTime);
+      const campaignPayload: Omit<Campaign, 'id'> = {
+        bakeryId: bakery.id,
+        name: campaignName.trim(),
+        channel,
+        messageType: selectedTemplateId ? 'template' : (mediaUrl || ctaText ? 'rich' : 'text'),
+        templateName: selectedTemplateId ? MESSAGING_TEMPLATES[channel].find(t => t.id === selectedTemplateId)?.name : undefined,
+        messageContent: messageContent.trim(),
+        mediaUrl: mediaUrl.trim() || undefined,
+        ctaText: ctaText.trim() || undefined,
+        ctaUrl: ctaUrl.trim() || undefined,
+        targetSegment,
+        recipientCount: count,
+        status: 'draft', // Saved as draft initially
+        sentAt: new Date().toISOString(), // REST-safe string
+        geoTargeting: isGeoEnabled && !(storeCenter.lat === 0 && storeCenter.lng === 0) ? {
+          enabled: true,
+          centerAddress: storeCenter.name,
+          latitude: storeCenter.lat,
+          longitude: storeCenter.lng,
+          radiusKm: geoRadius
+        } : undefined,
+        stats: {
+          sent: count,
+          delivered: 0,
+          opened: 0,
+          clicked: 0
+        }
+      };
 
-    const finalizeCampaign = async () => {
-      try {
-        const count = targetAudience.length;
+      // Add to Firestore database
+      const docRef = await addDoc(collection(db, 'campaigns'), campaignPayload);
+      
+      // Log the draft creation
+      await createLog(
+        'system',
+        `Created Draft Wah AI Campaign "${campaignName}" targeting ${count} customers.`,
+        authUser?.uid,
+        authUser?.email || undefined,
+        bakery.id
+      );
 
-        const campaignPayload: Omit<Campaign, 'id'> = {
-          bakeryId: bakery.id,
-          name: campaignName.trim(),
-          channel,
-          messageType: selectedTemplateId ? 'template' : (mediaUrl || ctaText ? 'rich' : 'text'),
-          templateName: selectedTemplateId ? MESSAGING_TEMPLATES[channel].find(t => t.id === selectedTemplateId)?.name : undefined,
-          messageContent: messageContent.trim(),
-          mediaUrl: mediaUrl.trim() || undefined,
-          ctaText: ctaText.trim() || undefined,
-          ctaUrl: ctaUrl.trim() || undefined,
-          targetSegment,
-          recipientCount: count,
-          status: 'completed',
-          sentAt: new Date().toISOString(), // REST-safe string or handled as is
-          geoTargeting: isGeoEnabled && !(storeCenter.lat === 0 && storeCenter.lng === 0) ? {
-            enabled: true,
-            centerAddress: storeCenter.name,
-            latitude: storeCenter.lat,
-            longitude: storeCenter.lng,
-            radiusKm: geoRadius
-          } : undefined,
-          stats: {
-            sent: count,
-            delivered: 0,
-            opened: 0,
-            clicked: 0
-          }
-        };
+      // Keep target details for honest dispatch wizard
+      setPendingCampaignId(docRef.id);
+      setPendingCampaignAudience(targetAudience);
+      setPendingCampaignMessage(messageContent.trim());
+      setShowDispatchModal(true);
 
-        // Add to Firestore database
-        const docRef = await addDoc(collection(db, 'campaigns'), campaignPayload);
-        
-        // Log the action
-        await createLog(
-          'system',
-          `Launched Wah AI Campaign "${campaignName}" via ${channel.toUpperCase()} targeting ${count} customers.`,
-          authUser?.uid,
-          authUser?.email || undefined,
-          bakery.id
-        );
+      // Reset campaign builder inputs
+      setCampaignName('');
+      setMessageContent('');
+      setMediaUrl('');
+      setCtaText('');
+      setCtaUrl('');
+      setSelectedTemplateId('');
+      setIsGeoEnabled(false);
 
-        setCampaignName('');
-        setMessageContent('');
-        setMediaUrl('');
-        setCtaText('');
-        setCtaUrl('');
-        setSelectedTemplateId('');
-        setIsGeoEnabled(false);
-        setSendProgress(100);
-        
-        setTimeout(() => {
-          setIsSending(false);
-          setSelectedCampaignId(docRef.id);
-        }, 500);
+    } catch (err: any) {
+      console.error(err);
+      alert('Error creating campaign draft: ' + err.message);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
-      } catch (err: any) {
-        console.error(err);
-        alert('Error saving campaign: ' + err.message);
-        setIsSending(false);
-      }
-    };
+  // Update campaign status to 'sent' after admin confirms
+  const handleConfirmCampaignSent = async () => {
+    if (!pendingCampaignId || !bakery?.id) return;
+    try {
+      const campaignRef = doc(db, 'campaigns', pendingCampaignId);
+      await updateDoc(campaignRef, {
+        status: 'sent',
+        sentAt: new Date().toISOString()
+      });
+
+      // Log dispatch confirmation
+      await createLog(
+        'system',
+        `Confirmed and finalized dispatch for Wah AI Campaign (ID: ${pendingCampaignId}).`,
+        authUser?.uid,
+        authUser?.email || undefined,
+        bakery.id
+      );
+
+      alert('Campaign status successfully updated to SENT!');
+      setShowDispatchModal(false);
+      setPendingCampaignId(null);
+      setPendingCampaignAudience([]);
+      setPendingCampaignMessage('');
+    } catch (err: any) {
+      console.error(err);
+      alert('Error finalizing campaign status: ' + err.message);
+    }
+  };
+
+  // Download target list as CSV for manual importing to WhatsApp Business
+  const handleDownloadCSV = () => {
+    if (pendingCampaignAudience.length === 0) return;
+    const headers = ['Name', 'Phone', 'Email', 'Personalized Message'];
+    const rows = pendingCampaignAudience.map(c => {
+      const personalizedMsg = pendingCampaignMessage.replace(/\{\{name\}\}/g, c.name);
+      return [
+        `"${c.name.replace(/"/g, '""')}"`,
+        `"${c.phone.replace(/"/g, '""')}"`,
+        `"${(c.email || '').replace(/"/g, '""')}"`,
+        `"${personalizedMsg.replace(/"/g, '""')}"`
+      ];
+    });
+
+    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `WahAi_Campaign_Audience_${Date.now()}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // Toggle workflow automation
@@ -694,7 +739,7 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
               <label className="text-[10px] font-black text-slate-900 uppercase tracking-wider">Campaign Name</label>
               <input 
                 type="text" 
-                placeholder="e.g. Koramangala Weekend Pastry Fiesta" 
+                placeholder="e.g. Chandigarh Weekend Pastry Special" 
                 value={campaignName}
                 onChange={(e) => setCampaignName(e.target.value)}
                 className="w-full border border-slate-200 rounded-2xl p-3 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-800 bg-slate-50/50 hover:bg-slate-50 transition-all"
@@ -942,22 +987,13 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
              </div>
           </div>
 
-          {/* Progress bar overlay during sending */}
+          {/* Save Campaign Draft Loading Indicator */}
           {isSending ? (
-            <div className="bg-slate-900 text-white rounded-3xl p-6 space-y-4 animate-in zoom-in-95 duration-150">
-              <div className="flex justify-between items-center">
-                <p className="text-xs font-black uppercase tracking-widest text-purple-400 flex items-center gap-2 animate-pulse">
-                  <Play className="w-4 h-4 text-purple-400" /> Dispatching Broadcast Campaigns...
-                </p>
-                <span className="text-sm font-black font-mono">{sendProgress}%</span>
-              </div>
-              <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
-                <div className="bg-purple-500 h-full rounded-full transition-all duration-150" style={{ width: `${sendProgress}%` }} />
-              </div>
-              <div className="flex justify-between items-center text-[10px] text-slate-400">
-                <p>Establishing encrypted API gateways...</p>
-                <p>{Math.round(targetAudience.length * (sendProgress / 100))} / {targetAudience.length} Sent</p>
-              </div>
+            <div className="bg-slate-950 border border-slate-800 text-white rounded-2xl p-4 flex items-center justify-center gap-3 animate-in zoom-in-95 duration-150">
+              <RefreshCw className="w-5 h-5 text-purple-400 animate-spin" />
+              <p className="text-xs font-black uppercase tracking-widest text-slate-200">
+                Generating Campaign Draft...
+              </p>
             </div>
           ) : (
             <button
@@ -1388,7 +1424,7 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
                   <button
                     onClick={() => {
                       setAiPersona('support');
-                      setAiInstructions('You are a helpful customer support agent for Kreative Chocolates. You handle inquiries about delivery timings (usually up to 15km from Koramangala), check ingredient details like eggless/vegan requests, and smoothly route high-priority disputes to managers. Be professional and patient.');
+                      setAiInstructions('You are a helpful customer support agent for Kreative Chocolates. You handle inquiries about delivery timings (usually up to 15km across Chandigarh, Mohali, Panchkula), check ingredient details like eggless/vegan requests, and smoothly route high-priority disputes to managers. Be professional and patient.');
                     }}
                     className={`p-3.5 rounded-2xl border text-left transition-all ${
                       aiPersona === 'support'
@@ -1522,7 +1558,7 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
                   {[
                     'Any eggless cakes?',
                     'Price of 1kg chocolate cake?',
-                    'Delivery to Indiranagar?'
+                    'Delivery to Mohali?'
                   ].map((chip, idx) => (
                     <button
                       key={idx}
@@ -1910,6 +1946,133 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dispatch Modal / Workspace */}
+      {showDispatchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2rem] shadow-2xl border border-slate-150 max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="bg-slate-950 text-white p-6 flex justify-between items-center shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center border border-purple-500/20">
+                  <Send className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-white">Campaign Dispatch Workspace</h3>
+                  <p className="text-[10px] text-purple-300 font-bold uppercase tracking-wider mt-0.5">Campaign Saved as Draft • {pendingCampaignAudience.length} target customers</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  if (confirm('Close dispatch workspace? The campaign will remain saved in Draft status.')) {
+                    setShowDispatchModal(false);
+                  }
+                }}
+                className="text-slate-400 hover:text-white transition-all p-1.5 hover:bg-slate-900 rounded-xl"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              {/* Campaign Message Box */}
+              <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4">
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1.5">Broadcast Message Content</p>
+                <div className="bg-white border border-slate-100 rounded-xl p-3 text-xs text-slate-700 whitespace-pre-wrap font-medium">
+                  {pendingCampaignMessage}
+                </div>
+              </div>
+
+              {/* Action Selector based on audience size */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">Target Recipient Dispatch Actions</h4>
+                  {pendingCampaignAudience.length > 10 && (
+                    <span className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 rounded-full px-2.5 py-0.5 font-bold uppercase">
+                      Large Audience ({pendingCampaignAudience.length}) • CSV Recommended
+                    </span>
+                  )}
+                </div>
+
+                {/* CSV Download Button */}
+                <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="space-y-0.5 text-center sm:text-left">
+                    <p className="text-xs font-bold text-slate-900">Download Contact List CSV</p>
+                    <p className="text-[10px] font-medium text-slate-500">Perfect for bulk importing contacts into WhatsApp Business or SMS gateways.</p>
+                  </div>
+                  <button
+                    onClick={handleDownloadCSV}
+                    className="w-full sm:w-auto px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shrink-0"
+                  >
+                    <Database className="w-4 h-4" /> Download CSV List
+                  </button>
+                </div>
+
+                {/* WhatsApp Manual Dispatch Actions (only if list is <= 10, or as option) */}
+                <div className="space-y-2">
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-wider">
+                    {pendingCampaignAudience.length <= 10 
+                      ? 'Direct WhatsApp Links' 
+                      : 'Direct Send Links (First 10 shown - use CSV for all)'}
+                  </p>
+                  <div className="border border-slate-150 rounded-2xl divide-y divide-slate-100 overflow-hidden max-h-52 overflow-y-auto">
+                    {pendingCampaignAudience.slice(0, 10).map((c, i) => {
+                      const cleanPhone = c.phone.replace(/\D/g, '');
+                      const personalizedMsg = pendingCampaignMessage.replace(/\{\{name\}\}/g, c.name);
+                      const waLink = `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(personalizedMsg)}`;
+                      return (
+                        <div key={c.id || i} className="p-3 flex items-center justify-between bg-white hover:bg-slate-50/50 transition-all text-xs">
+                          <div className="flex items-center gap-3">
+                            <span className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold font-mono">
+                              {i + 1}
+                            </span>
+                            <div>
+                              <p className="font-bold text-slate-800">{c.name}</p>
+                              <p className="text-[10px] font-mono text-slate-400 font-semibold">{c.phone}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => window.open(waLink, '_blank')}
+                            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 text-emerald-800 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1"
+                          >
+                            <MessageCircle className="w-3.5 h-3.5 text-emerald-600" /> Open WhatsApp
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-slate-50 p-5 border-t border-slate-150 flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0">
+              <p className="text-[10px] text-slate-500 font-medium text-center sm:text-left">
+                After you have dispatched your messages, click complete to update database status to "sent".
+              </p>
+              <div className="flex gap-2.5 w-full sm:w-auto">
+                <button
+                  onClick={() => {
+                    if (confirm('Discard changes and keep as Draft?')) {
+                      setShowDispatchModal(false);
+                    }
+                  }}
+                  className="flex-1 sm:flex-none px-4 py-2.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-[11px] font-black uppercase tracking-wider text-slate-600 transition-all"
+                >
+                  Keep as Draft
+                </button>
+                <button
+                  onClick={handleConfirmCampaignSent}
+                  className="flex-1 sm:flex-none px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" /> Mark as Fully Sent
+                </button>
+              </div>
             </div>
           </div>
         </div>
