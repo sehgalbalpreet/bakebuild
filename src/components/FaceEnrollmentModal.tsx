@@ -181,40 +181,42 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
               <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-3" />
               <p className="text-xs font-bold text-red-600 mb-2 leading-snug">{errorMsg}</p>
               <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                Note: Standard browser policies block camera access inside nested iframes (like the AI Studio preview). Open the app in a new tab or use the simulator bypass below to proceed.
+                Note: Standard browser policies block camera access inside nested iframes (like the AI Studio preview). Try opening the app in a new browser tab and ensure camera permissions are granted.
               </p>
             </div>
 
-            <div className="space-y-2">
-              <button
-                onClick={async () => {
-                  try {
-                    setStage('capturing');
-                    const dummyDescriptor = Array.from({ length: 128 }, () => Math.random() * 0.1);
-                    await updateDoc(doc(db, 'users', userId), {
-                      faceDescriptor: dummyDescriptor,
-                      faceEnrolledAt: serverTimestamp(),
-                    });
-                    setStage('success');
-                    onEnrolled?.();
-                  } catch (err: any) {
-                    console.error('Bypass enrollment error:', err);
-                    setErrorMsg('Bypass failed: ' + err.message);
-                    setStage('error');
-                  }
-                }}
-                className="w-full bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 rounded-2xl py-3.5 font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-100"
-              >
-                <CheckCircle2 className="w-4 h-4" /> Simulate Face Enrollment
-              </button>
-              
-              <button
-                onClick={() => window.open(window.location.href, '_blank')}
-                className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl py-3 font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-1.5 transition-all"
-              >
-                Open App in New Tab
-              </button>
-            </div>
+            {(import.meta as any).env?.DEV && (
+              <div className="space-y-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      setStage('capturing');
+                      const dummyDescriptor = Array.from({ length: 128 }, () => Math.random() * 0.1);
+                      await updateDoc(doc(db, 'users', userId), {
+                        faceDescriptor: dummyDescriptor,
+                        faceEnrolledAt: serverTimestamp(),
+                      });
+                      setStage('success');
+                      onEnrolled?.();
+                    } catch (err: any) {
+                      console.error('Bypass enrollment error:', err);
+                      setErrorMsg('Bypass failed: ' + err.message);
+                      setStage('error');
+                    }
+                  }}
+                  className="w-full bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 rounded-2xl py-3.5 font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-100"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Simulate Face Enrollment
+                </button>
+                
+                <button
+                  onClick={() => window.open(window.location.href, '_blank')}
+                  className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl py-3 font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-1.5 transition-all"
+                >
+                  Open App in New Tab
+                </button>
+              </div>
+            )}
           </div>
         )}
 

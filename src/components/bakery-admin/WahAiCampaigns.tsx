@@ -963,10 +963,10 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
                          <p className="text-[11px] italic text-slate-400">No clients with coordinates inside the {geoRadius}km radius.</p>
                        ) : (
                          <div className="max-h-32 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-100 bg-white pr-2">
-                           {targetAudience.map(c => {
+                           {targetAudience.map((c, idx) => {
                              const dist = getDistance(storeCenter.lat, storeCenter.lng, c.latitude!, c.longitude!);
                              return (
-                               <div key={c.id} className="p-2 flex justify-between items-center text-xs">
+                               <div key={`matching-${c.id || ''}-${c.phone || idx}`} className="p-2 flex justify-between items-center text-xs">
                                  <div className="flex items-center gap-2">
                                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                                    <span className="font-bold text-slate-800">{c.name}</span>
@@ -2026,7 +2026,7 @@ export const WahAiCampaigns: React.FC<WahAiCampaignsProps> = ({ orders, customer
                       const personalizedMsg = pendingCampaignMessage.replace(/\{\{name\}\}/g, c.name);
                       const waLink = `https://wa.me/91${cleanPhone.slice(-10)}?text=${encodeURIComponent(personalizedMsg)}`;
                       return (
-                        <div key={c.id || i} className="p-3 flex items-center justify-between bg-white hover:bg-slate-50/50 transition-all text-xs">
+                        <div key={`dispatch-cust-${c.id || ''}-${c.phone || i}`} className="p-3 flex items-center justify-between bg-white hover:bg-slate-50/50 transition-all text-xs">
                           <div className="flex items-center gap-3">
                             <span className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold font-mono">
                               {i + 1}

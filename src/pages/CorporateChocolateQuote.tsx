@@ -1336,7 +1336,14 @@ export const CorporateChocolateQuote: React.FC = () => {
                         >
                           -
                         </button>
-                        <span className="font-mono text-xs font-black min-w-[24px] text-center text-slate-900">{ediblePrintPieces}</span>
+                        <input 
+                          type="number"
+                          min="1"
+                          max={calcs.pieces}
+                          value={ediblePrintPieces}
+                          onChange={e => setEdiblePrintPieces(Math.min(calcs.pieces, Math.max(1, parseInt(e.target.value) || 1)))}
+                          className="w-12 bg-white border border-slate-200 rounded-xl px-1 py-1 text-xs font-mono font-black text-center text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                        />
                         <button 
                           type="button" 
                           onClick={() => setEdiblePrintPieces(Math.min(calcs.pieces, ediblePrintPieces + 1))}
@@ -1485,19 +1492,29 @@ export const CorporateChocolateQuote: React.FC = () => {
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-xs ml-1">
                     <span className="font-black text-slate-500 uppercase tracking-wider">Corporate Order Volume</span>
-                    <span className="font-black font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded text-[11px]">{volume} Boxes</span>
+                    <div className="flex items-center gap-1.5">
+                      <input 
+                        type="number" 
+                        min="1"
+                        max="100000"
+                        value={volume}
+                        onChange={e => setVolume(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-20 bg-slate-50 border border-slate-200 rounded-xl px-2 py-1 text-xs font-mono font-black text-center text-blue-600 focus:bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="font-black text-slate-400 uppercase tracking-widest text-[9px]">Boxes</span>
+                    </div>
                   </div>
                   <input 
                     type="range" 
-                    min="10" 
+                    min="1" 
                     max="2000" 
-                    step="10"
+                    step="1"
                     value={volume}
                     onChange={e => setVolume(parseInt(e.target.value))}
                     className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-blue-600"
                   />
                   <div className="flex justify-between text-[8px] font-bold uppercase tracking-widest text-slate-400 px-1">
-                    <span>10 Boxes</span>
+                    <span>1 Box</span>
                     <span>500</span>
                     <span>1000</span>
                     <span>2000 Boxes</span>
