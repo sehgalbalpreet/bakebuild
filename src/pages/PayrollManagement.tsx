@@ -189,7 +189,8 @@ export const PayrollManagement: React.FC = () => {
         
         // Load custom rates if set
         const baseSalary = member.baseSalary || (member.role === 'chocolate_production' || member.role === 'bakery_admin' ? 15000 : 12000);
-        const overtimeRate = member.overtimeRate || 150;
+        const dynamicDefaultOTRate = Math.round(((baseSalary / workingDays) / 8) * 1.5);
+        const overtimeRate = member.overtimeRate || dynamicDefaultOTRate;
 
         // Calculate actual overtime hours from clocks
         let totalOvertimeHours = 0;
@@ -257,7 +258,8 @@ export const PayrollManagement: React.FC = () => {
     setBonusInput(p.bonus || 0);
     setDeductionsInput(p.deductions || 0);
     setOvertimeHoursInput(p.overtimeHours || 0);
-    setOvertimeRateInput(p.overtimeRate || 150);
+    const fallbackOT = Math.round(((p.baseSalary / p.workingDays) / 8) * 1.5);
+    setOvertimeRateInput(p.overtimeRate || fallbackOT);
     setBaseSalaryInput(p.baseSalary || 12000);
     setShowAdjust(true);
   };
@@ -343,7 +345,7 @@ export const PayrollManagement: React.FC = () => {
         p.workingDays,
         p.baseSalary,
         p.overtimeHours,
-        p.overtimeRate || 150,
+        p.overtimeRate || Math.round(((p.baseSalary / p.workingDays) / 8) * 1.5),
         p.bonus,
         p.deductions,
         p.netPay,
@@ -515,7 +517,7 @@ export const PayrollManagement: React.FC = () => {
                 ) : (
                   payroll.map(p => {
                     const basicEarned = (p.baseSalary / p.workingDays) * p.presentDays;
-                    const overtimeEarned = p.overtimeHours * (p.overtimeRate || 150);
+                    const overtimeEarned = p.overtimeHours * (p.overtimeRate || Math.round(((p.baseSalary / p.workingDays) / 8) * 1.5));
                     const adjustmentsTotal = (p.bonus || 0) - (p.deductions || 0);
 
                     return (
@@ -1104,11 +1106,11 @@ export const PayrollManagement: React.FC = () => {
                     <div className="font-bold text-slate-600">
                       Overtime Allowance
                       <span className="block text-[9.5px] font-medium text-slate-400 mt-0.5">
-                        {selectedRecord.overtimeHours} hours worked × ₹{selectedRecord.overtimeRate || 150}/hr
+                        {selectedRecord.overtimeHours} hours worked × ₹{selectedRecord.overtimeRate || Math.round(((selectedRecord.baseSalary / selectedRecord.workingDays) / 8) * 1.5)}/hr
                       </span>
                     </div>
                     <div className="font-black text-emerald-600">
-                      +₹{Math.round(selectedRecord.overtimeHours * (selectedRecord.overtimeRate || 150)).toLocaleString()}
+                      +₹{Math.round(selectedRecord.overtimeHours * (selectedRecord.overtimeRate || Math.round(((selectedRecord.baseSalary / selectedRecord.workingDays) / 8) * 1.5))).toLocaleString()}
                     </div>
                   </div>
 

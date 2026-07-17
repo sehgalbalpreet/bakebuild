@@ -693,7 +693,7 @@ export const Login: React.FC = () => {
       setTimeout(runDetection, 1000);
 
     } catch (camErr: any) {
-      console.error("Biometric camera check-in error:", camErr);
+      console.warn("Biometric camera check-in status/warning:", camErr?.message || camErr);
       stopRealFaceCamera();
       setScanningBiometric(null);
       setError("Camera access is required for Face ID verification: " + camErr.message);

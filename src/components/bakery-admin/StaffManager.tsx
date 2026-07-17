@@ -6,7 +6,7 @@ import { createLog } from '../../services/logService';
 import { UserProfile, OperationType, PaymentSettings } from '../../types';
 import { getActiveFeatures } from '../../utils/subscriptionUtils';
 import { generateWhatsAppInviteLink, cn } from '../../lib/utils';
-import { ShieldAlert, Wrench, Edit2, Trash2, CheckCircle2, MessageCircle, Camera, Lock } from 'lucide-react';
+import { ShieldAlert, Wrench, Edit2, Trash2, CheckCircle2, MessageCircle, Camera, Lock, Upload } from 'lucide-react';
 import { FaceEnrollmentModal } from '../FaceEnrollmentModal';
 
 interface StaffManagerProps {
@@ -48,11 +48,14 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
   // Photo Capture States
   const [photoUrl, setPhotoUrl] = useState<string>('');
   const [isCapturing, setIsCapturing] = useState(false);
+  const [cameraError, setCameraError] = useState<string>('');
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const startCamera = async () => {
     try {
+      setCameraError('');
       setIsCapturing(true);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 320, facingMode: 'user' }
@@ -62,9 +65,9 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
         videoRef.current.srcObject = stream;
         videoRef.current.play().catch(err => console.warn("Video play interrupted:", err));
       }
-    } catch (err) {
-      console.error("Camera open failed:", err);
-      alert("Could not access camera. Please check camera permissions.");
+    } catch (err: any) {
+      console.warn("Camera open status/warning:", err?.message || err);
+      setCameraError(err?.message || "Could not access camera. Please check permissions or use device upload.");
       setIsCapturing(false);
     }
   };
@@ -89,6 +92,20 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
         setPhotoUrl(dataUrl);
       }
       stopCamera();
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCameraError('');
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setPhotoUrl(event.target.result as string);
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -171,6 +188,10 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
     console.log('Initiating staff save for:', uid);
     
     try {
+      const baseSalary = baseSalaryState ? Number(baseSalaryState) : 12000;
+      const hourlyRate = baseSalary / 26 / 8;
+      const defaultOTRate = Math.round(hourlyRate * 1.5);
+
       const staffData: any = {
         displayName: name,
         email,
@@ -178,7 +199,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
         role,
         bakeryId,
         baseSalary: baseSalaryState ? Number(baseSalaryState) : null,
-        overtimeRate: overtimeRateState ? Number(overtimeRateState) : null,
+        overtimeRate: overtimeRateState ? Number(overtimeRateState) : defaultOTRate,
         photoUrl: photoUrl || null,
       };
       
@@ -448,7 +469,6 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
               <tr>
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[200px]">Staff Name</th>
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[150px]">Access Role</th>
-                <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[150px]">Salary & OT Rate</th>
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[150px]">Mobile Login</th>
                 <th className="px-8 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[120px]">Face Login</th>
                 <th className="px-8 py-4 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[120px]">Actions</th>
@@ -458,39 +478,39 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
               {staff.filter(s => s.role !== 'dealer' && s.role !== 'super_admin').map((member) => (
                 <tr key={member.uid} className="hover:bg-slate-50 transition-colors">
                   <td className="px-8 py-4 text-slate-900">
-                    <div className="flex items-center gap-3">
+                    <div 
+                      onClick={() => startEdit(member)}
+                      className="flex items-center gap-3 cursor-pointer group/name select-none"
+                    >
                       {(member as any).photoUrl ? (
                         <img 
                           src={(member as any).photoUrl} 
                           alt={member.displayName} 
-                          className="w-8 h-8 rounded-full object-cover border border-slate-200"
+                          className="w-8 h-8 rounded-full object-cover border border-slate-200 transition-transform group-hover/name:scale-105"
                           referrerPolicy="no-referrer"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
+                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 transition-colors group-hover/name:bg-purple-100 group-hover/name:text-purple-700">
                           {member.displayName.charAt(0).toUpperCase()}
                         </div>
                       )}
                       <div>
-                        <div className="font-bold text-slate-900">{member.displayName}</div>
-                        {member.email && (
+                        <div className="font-bold text-slate-900 group-hover/name:text-purple-600 group-hover/name:underline flex items-center gap-1.5">
+                          {member.displayName}
+                          <span className="text-[8px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded group-hover/name:bg-purple-50 group-hover/name:text-purple-600 transition-colors">
+                            Edit Profile
+                          </span>
+                        </div>
+                        {member.email ? (
                           <div className="text-[10px] text-slate-400 font-semibold">{member.email}</div>
+                        ) : (
+                          <div className="text-[9px] text-slate-350 font-semibold italic">Click to setup email</div>
                         )}
                       </div>
                     </div>
                   </td>
                   <td className="px-8 py-4">
                     <span className="text-[9px] font-black px-2 py-1 bg-purple-50 text-purple-600 rounded uppercase tracking-widest">{member.role.replace('_', ' ')}</span>
-                  </td>
-                  <td className="px-8 py-4">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-xs font-bold text-slate-900">
-                        {member.baseSalary ? `₹${member.baseSalary.toLocaleString()}/mo` : 'Default (₹12,000/mo)'}
-                      </span>
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                        OT: {member.overtimeRate ? `₹${member.overtimeRate}/hr` : 'Default (₹150/hr)'}
-                      </span>
-                    </div>
                   </td>
                   <td className="px-8 py-4">
                     <div className="flex flex-col gap-1">
@@ -619,7 +639,13 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                     )}
                   </div>
 
-                  <div className="flex gap-2">
+                  {cameraError && (
+                    <div className="text-[9px] text-red-500 font-bold bg-red-50 border border-red-100 rounded-xl px-3 py-1.5 text-center max-w-xs leading-normal">
+                      ⚠️ Camera access blocked. Use "Upload Photo" fallback below or open app in a new tab.
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-2 justify-center">
                     {isCapturing ? (
                       <>
                         <button
@@ -645,8 +671,26 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                           className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-[10px] uppercase tracking-widest rounded-xl flex items-center gap-1 transition"
                         >
                           <Camera size={12} />
-                          {photoUrl ? "Change Photo" : "Capture Photo"}
+                          {photoUrl ? "Re-take Photo" : "Capture Photo"}
                         </button>
+                        
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[10px] uppercase tracking-widest rounded-xl flex items-center gap-1 transition"
+                        >
+                          <Upload size={12} />
+                          Upload Photo
+                        </button>
+                        
+                        <input 
+                          type="file" 
+                          ref={fileInputRef} 
+                          onChange={handleFileUpload} 
+                          accept="image/*" 
+                          className="hidden" 
+                        />
+
                         {photoUrl && (
                           <button
                             type="button"
@@ -696,7 +740,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                     <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Overtime Rate (₹/hr)</label>
                     <input 
                       type="number" 
-                      placeholder="e.g. 150" 
+                      placeholder={`Default: ₹${Math.round(((baseSalaryState ? Number(baseSalaryState) : 12000) / 26 / 8) * 1.5)}/hr (1.5x hourly)`} 
                       value={overtimeRateState} 
                       onChange={e => setOvertimeRateState(e.target.value)} 
                       className="w-full bg-slate-50 border p-3 rounded-xl font-bold text-xs" 

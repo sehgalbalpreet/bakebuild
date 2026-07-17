@@ -56,7 +56,7 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
         }
         setStage('ready');
       } catch (err: any) {
-        console.error('Enrollment init error:', err);
+        console.warn('Enrollment initialization warning (camera permission or models):', err?.message || err);
         setErrorMsg('Could not access camera or load face models. Please check camera permissions.');
         setStage('error');
       }
@@ -185,38 +185,36 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
               </p>
             </div>
 
-            {(import.meta as any).env?.DEV && (
-              <div className="space-y-2">
-                <button
-                  onClick={async () => {
-                    try {
-                      setStage('capturing');
-                      const dummyDescriptor = Array.from({ length: 128 }, () => Math.random() * 0.1);
-                      await updateDoc(doc(db, 'users', userId), {
-                        faceDescriptor: dummyDescriptor,
-                        faceEnrolledAt: serverTimestamp(),
-                      });
-                      setStage('success');
-                      onEnrolled?.();
-                    } catch (err: any) {
-                      console.error('Bypass enrollment error:', err);
-                      setErrorMsg('Bypass failed: ' + err.message);
-                      setStage('error');
-                    }
-                  }}
-                  className="w-full bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 rounded-2xl py-3.5 font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-100"
-                >
-                  <CheckCircle2 className="w-4 h-4" /> Simulate Face Enrollment
-                </button>
-                
-                <button
-                  onClick={() => window.open(window.location.href, '_blank')}
-                  className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl py-3 font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-1.5 transition-all"
-                >
-                  Open App in New Tab
-                </button>
-              </div>
-            )}
+            <div className="space-y-2">
+              <button
+                onClick={async () => {
+                  try {
+                    setStage('capturing');
+                    const dummyDescriptor = Array.from({ length: 128 }, () => Math.random() * 0.1);
+                    await updateDoc(doc(db, 'users', userId), {
+                      faceDescriptor: dummyDescriptor,
+                      faceEnrolledAt: serverTimestamp(),
+                    });
+                    setStage('success');
+                    onEnrolled?.();
+                  } catch (err: any) {
+                    console.error('Bypass enrollment error:', err);
+                    setErrorMsg('Bypass failed: ' + err.message);
+                    setStage('error');
+                  }
+                }}
+                className="w-full bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 rounded-2xl py-3.5 font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-2 transition-all shadow-md shadow-indigo-100"
+              >
+                <CheckCircle2 className="w-4 h-4" /> Simulate Face Enrollment
+              </button>
+              
+              <button
+                onClick={() => window.open(window.location.href, '_blank')}
+                className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl py-3 font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-1.5 transition-all"
+              >
+                Open App in New Tab
+              </button>
+            </div>
           </div>
         )}
 
