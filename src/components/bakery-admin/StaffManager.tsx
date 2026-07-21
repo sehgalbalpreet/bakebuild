@@ -201,6 +201,7 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
         baseSalary: baseSalaryState ? Number(baseSalaryState) : null,
         overtimeRate: overtimeRateState ? Number(overtimeRateState) : defaultOTRate,
         photoUrl: photoUrl || null,
+        isDeleted: false,
       };
       
       // Only include PIN if it's set (optional on edit)
@@ -223,6 +224,9 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
         });
         await createLog('staff', `New staff member added: ${name} (${role})`, auth.currentUser?.uid, auth.currentUser?.email, bakeryId);
         
+        // Show explicit success feedback!
+        alert(`Success: Staff member "${name}" has been created!`);
+
         if (cleanPh) {
           setLastAddedStaff({ name, phone: cleanPh, pin: finalPin });
         } else {
@@ -621,7 +625,13 @@ export const StaffManager: React.FC<StaffManagerProps> = ({
                   <div className="relative w-28 h-28 rounded-full overflow-hidden bg-slate-200 border-2 border-slate-100 shadow-inner flex items-center justify-center group">
                     {isCapturing ? (
                       <video 
-                        ref={videoRef} 
+                        ref={(el) => {
+                          videoRef.current = el;
+                          if (el && streamRef.current) {
+                            el.srcObject = streamRef.current;
+                            el.play().catch(err => console.warn("Video play interrupted:", err));
+                          }
+                        }}
                         autoPlay 
                         playsInline 
                         muted 

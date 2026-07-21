@@ -5,10 +5,11 @@ import { db } from '../firebase';
 import {
   loadFaceModels,
   getFaceDescriptorFromVideo,
+  getFaceDescriptorFromImage,
   descriptorToArray,
   isFaceCaptureSupported,
 } from '../utils/biometric';
-import { Camera, CheckCircle2, X, AlertCircle, Loader2 } from 'lucide-react';
+import { Camera, CheckCircle2, X, AlertCircle, Loader2, Upload } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface FaceEnrollmentModalProps {
@@ -28,11 +29,27 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<Stage>('loading_models');
+  const stageRef = useRef<Stage>('loading_models');
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string>('');
+
+  useEffect(() => {
+    stageRef.current = stage;
+  }, [stage]);
 
   useEffect(() => {
     let cancelled = false;
+
+    // Timeout to prevent getting stuck in loading state (e.g. inside an iframe)
+    const timeoutId = setTimeout(() => {
+      if (!cancelled && stageRef.current === 'loading_models') {
+        console.warn('Face model loading or camera initialization timed out.');
+        setErrorMsg('Camera loading is taking longer than usual. Note: Standard browser security policies block camera access inside nested iframes (like the AI Studio preview). Please open in a new tab or use the bypass/upload options below!');
+        setStage('error');
+      }
+    }, 3500);
 
     const init = async () => {
       if (!isFaceCaptureSupported()) {
@@ -57,7 +74,8 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
         setStage('ready');
       } catch (err: any) {
         console.warn('Enrollment initialization warning (camera permission or models):', err?.message || err);
-        setErrorMsg('Could not access camera or load face models. Please check camera permissions.');
+        const detailMsg = err?.message || (typeof err === 'string' ? err : 'Camera access permission denied');
+        setErrorMsg(`Camera access issue: ${detailMsg}. You can still enroll by uploading a staff photo below!`);
         setStage('error');
       }
     };
@@ -66,6 +84,7 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
 
     return () => {
       cancelled = true;
+      clearTimeout(timeoutId);
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
@@ -98,6 +117,57 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setStage('capturing');
+    setErrorMsg('');
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target?.result as string;
+      setImagePreviewUrl(dataUrl);
+
+      // Create an image element to analyze with face-api.js
+      const img = new Image();
+      img.src = dataUrl;
+      img.onload = async () => {
+        try {
+          // Ensure models are loaded
+          await loadFaceModels();
+          const { descriptor, error } = await getFaceDescriptorFromImage(img);
+
+          if (!descriptor) {
+            setErrorMsg(error || 'No face detected in the uploaded image. Please make sure the photo is a clear, front-facing profile.');
+            setStage('error');
+            return;
+          }
+
+          // Save descriptor to user profile
+          await updateDoc(doc(db, 'users', userId), {
+            faceDescriptor: descriptorToArray(descriptor),
+            faceEnrolledAt: serverTimestamp(),
+            photoUrl: dataUrl, // Save the base64 preview as profile photo too!
+          });
+
+          streamRef.current?.getTracks().forEach((t) => t.stop());
+          setStage('success');
+          onEnrolled?.();
+        } catch (err: any) {
+          console.error('File upload enrollment error:', err);
+          setErrorMsg('Failed to analyze uploaded photo: ' + (err.message || err));
+          setStage('error');
+        }
+      };
+      img.onerror = () => {
+        setErrorMsg('Failed to load the uploaded image file. Please try another file.');
+        setStage('error');
+      };
+    };
+    reader.readAsDataURL(file);
+  };
+
   return createPortal(
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[200] flex items-center justify-center p-4">
       <div className="bg-white max-w-sm w-full rounded-[2.5rem] shadow-2xl p-8 animate-in zoom-in-95 duration-200 relative">
@@ -125,13 +195,26 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
         {(stage === 'loading_models' || stage === 'ready' || stage === 'capturing') && (
           <>
             <div className="relative w-full aspect-square bg-slate-900 rounded-3xl overflow-hidden mb-4">
-              <video
-                ref={videoRef}
-                autoPlay
-                muted
-                playsInline
-                className="w-full h-full object-cover scale-x-[-1]"
-              />
+              {imagePreviewUrl ? (
+                <img
+                  src={imagePreviewUrl}
+                  alt="Preview"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <video
+                  ref={(el) => {
+                    videoRef.current = el;
+                    if (el && streamRef.current) {
+                      el.srcObject = streamRef.current;
+                    }
+                  }}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover scale-x-[-1]"
+                />
+              )}
               {stage === 'loading_models' && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80">
                   <Loader2 className="w-8 h-8 text-white animate-spin mb-2" />
@@ -144,7 +227,7 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
                   <p className="text-[10px] font-black text-white uppercase tracking-widest">Analyzing Face...</p>
                 </div>
               )}
-              {stage === 'ready' && (
+              {stage === 'ready' && !imagePreviewUrl && (
                 <div className="absolute inset-0 border-4 border-dashed border-white/30 m-8 rounded-full pointer-events-none" />
               )}
             </div>
@@ -159,19 +242,44 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
               Center your face in the frame, good lighting helps
             </p>
 
-            <button
-              onClick={handleCapture}
-              disabled={stage !== 'ready'}
-              className={cn(
-                'w-full rounded-2xl py-4 font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all',
-                stage === 'ready'
-                  ? 'bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              )}
-            >
-              <Camera className="w-5 h-5" />
-              Capture & Enroll
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={handleCapture}
+                disabled={stage !== 'ready' || !!imagePreviewUrl}
+                className={cn(
+                  'w-full rounded-2xl py-4 font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all',
+                  stage === 'ready' && !imagePreviewUrl
+                    ? 'bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                )}
+              >
+                <Camera className="w-5 h-5" />
+                Capture & Enroll
+              </button>
+
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-slate-200"></div>
+                <span className="flex-shrink mx-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Or</span>
+                <div className="flex-grow border-t border-slate-200"></div>
+              </div>
+
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="image/*"
+                className="hidden"
+              />
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl py-3.5 font-black uppercase tracking-widest text-[10px] flex items-center justify-center gap-2 transition-all shadow-sm"
+              >
+                <Upload className="w-4 h-4 text-slate-500" />
+                Upload Staff Photo
+              </button>
+            </div>
           </>
         )}
 
@@ -181,11 +289,27 @@ export const FaceEnrollmentModal: React.FC<FaceEnrollmentModalProps> = ({
               <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-3" />
               <p className="text-xs font-bold text-red-600 mb-2 leading-snug">{errorMsg}</p>
               <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                Note: Standard browser policies block camera access inside nested iframes (like the AI Studio preview). Try opening the app in a new browser tab and ensure camera permissions are granted.
+                Note: Standard browser policies block camera access inside nested iframes (like the AI Studio preview). You can open the app in a new browser tab or simply upload a staff photo.
               </p>
             </div>
 
             <div className="space-y-2">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="image/*"
+                className="hidden"
+              />
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full bg-emerald-600 text-white hover:bg-emerald-500 active:scale-95 rounded-2xl py-3.5 font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-2 transition-all shadow-md shadow-emerald-100"
+              >
+                <Upload className="w-4 h-4" /> Upload Staff Photo
+              </button>
+
               <button
                 onClick={async () => {
                   try {

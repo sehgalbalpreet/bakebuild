@@ -47,7 +47,7 @@ import {
   Database
 } from 'lucide-react';
 import { format, isToday, startOfMonth, endOfMonth } from 'date-fns';
-import { cn } from '../lib/utils';
+import { cn, safeTimestampToDate } from '../lib/utils';
 import { loadFaceModels, getFaceDescriptorFromVideo, compareFaceDescriptors } from '../utils/biometric';
 import { FaceEnrollmentModal } from '../components/FaceEnrollmentModal';
 
@@ -1676,13 +1676,13 @@ export const AttendanceDashboard: React.FC = () => {
                <div className="space-y-1">
                  <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">Start Time</p>
                  <p className="text-2xl font-black text-slate-900">
-                   {todayRecord?.clockIn ? format(todayRecord.clockIn.toDate(), 'HH:mm') : '--:--'}
+                   {todayRecord?.clockIn ? format(safeTimestampToDate(todayRecord.clockIn) || new Date(), 'HH:mm') : '--:--'}
                  </p>
                </div>
                <div className="space-y-1">
                  <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">End Time</p>
                  <p className="text-2xl font-black text-slate-900 text-slate-300">
-                   {todayRecord?.clockOut ? format(todayRecord.clockOut.toDate(), 'HH:mm') : '--:--'}
+                   {todayRecord?.clockOut ? format(safeTimestampToDate(todayRecord.clockOut) || new Date(), 'HH:mm') : '--:--'}
                  </p>
                </div>
              </div>
@@ -1862,7 +1862,7 @@ export const AttendanceDashboard: React.FC = () => {
                 <div className="flex justify-between items-center bg-amber-50/50 p-2 rounded-lg border border-amber-100/50">
                   <span className="text-amber-700 uppercase tracking-wider text-[8px]">Away Monitored Since:</span>
                   <span className="text-amber-800">
-                    {format(todayRecord.awaySince.toDate(), 'HH:mm:ss')}
+                    {format(safeTimestampToDate(todayRecord.awaySince) || new Date(), 'HH:mm:ss')}
                   </span>
                 </div>
               )}
@@ -1920,7 +1920,7 @@ export const AttendanceDashboard: React.FC = () => {
                     <h4 className="text-sm font-black text-slate-900">{format(new Date(record.date), 'EEEE, MMM dd')}</h4>
                     <div className="flex items-center gap-2 mt-1">
                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
-                         {record.clockIn ? format(record.clockIn.toDate(), 'HH:mm') : '--'} - {record.clockOut ? format(record.clockOut.toDate(), 'HH:mm') : '--'}
+                         {record.clockIn ? format(safeTimestampToDate(record.clockIn) || new Date(), 'HH:mm') : '--'} - {record.clockOut ? format(safeTimestampToDate(record.clockOut) || new Date(), 'HH:mm') : '--'}
                        </span>
                     </div>
                   </div>
@@ -1953,7 +1953,12 @@ export const AttendanceDashboard: React.FC = () => {
             <div className="w-full flex flex-col items-center justify-center p-4 sm:p-8 max-h-[100dvh] overflow-y-auto">
               <div className="w-full max-w-[280px] sm:max-w-sm aspect-square bg-slate-800 rounded-[2rem] sm:rounded-[3rem] border-4 border-indigo-500/50 relative overflow-hidden flex items-center justify-center shadow-2xl">
                 <video 
-                  ref={videoRef} 
+                  ref={(el) => {
+                    videoRef.current = el;
+                    if (el && stream) {
+                      el.srcObject = stream;
+                    }
+                  }}
                   autoPlay 
                   playsInline 
                   className="w-full h-full object-cover transform scale-x-[-1]"

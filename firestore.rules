@@ -113,7 +113,7 @@ service cloud.firestore {
         // User can update their own profile fields for login sync or basic info
         (request.auth.uid == userId && incoming().role != 'super_admin') ||
         (profileExists() && getProfile().role == 'bakery_admin' && (existing().bakeryId == getProfile().bakeryId || isSuperAdmin()) && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['role', 'dealerId', 'pin', 'displayName', 'phone', 'bakeryId', 'uid', 'email', 'updatedAt', 'customCakeDiscount', 'isDeleted', 'deletedAt', 'lastLogin', 'baseSalary', 'overtimeRate', 'faceDescriptor', 'faceEnrolledAt']))
+         incoming().diff(existing()).affectedKeys().hasOnly(['role', 'dealerId', 'pin', 'displayName', 'phone', 'bakeryId', 'uid', 'email', 'updatedAt', 'customCakeDiscount', 'isDeleted', 'deletedAt', 'lastLogin', 'baseSalary', 'overtimeRate', 'faceDescriptor', 'faceEnrolledAt', 'photoUrl']))
       );
       allow delete: if isSignedIn() && (
         isSuperAdmin() || 

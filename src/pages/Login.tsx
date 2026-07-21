@@ -1160,7 +1160,13 @@ export const Login: React.FC = () => {
                       ) : (
                         <div className="relative w-full h-full">
                           <video
-                            ref={attendanceVideoRef}
+                            ref={(el) => {
+                              attendanceVideoRef.current = el;
+                              if (el && attendanceStreamRef.current) {
+                                el.srcObject = attendanceStreamRef.current;
+                                el.play().catch(err => console.warn("Video play interrupted:", err));
+                              }
+                            }}
                             autoPlay
                             muted
                             playsInline
@@ -1381,7 +1387,13 @@ export const Login: React.FC = () => {
             {scanType === 'face' ? (
               <div className="absolute inset-0 w-full h-full bg-slate-950">
                 <video
-                  ref={realFaceVideoRef}
+                  ref={(el) => {
+                    realFaceVideoRef.current = el;
+                    if (el && realFaceStreamRef.current) {
+                      el.srcObject = realFaceStreamRef.current;
+                      el.play().catch(pErr => console.warn("Biometric video play error:", pErr));
+                    }
+                  }}
                   autoPlay
                   muted
                   playsInline
@@ -1415,15 +1427,31 @@ export const Login: React.FC = () => {
             <p className="text-[9px] font-black uppercase text-indigo-400 tracking-[0.2em]">DO NOT CLOSE CAMERA - KEEP FACE IN DIGITAL FOCUS</p>
           </div>
 
-          <button
-            onClick={() => {
-              stopRealFaceCamera();
-              setScanningBiometric(null);
-            }}
-            className="mt-6 px-6 py-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white font-bold text-[10px] uppercase tracking-widest rounded-xl transition"
-          >
-            Cancel Scan
-          </button>
+          <div className="mt-6 flex gap-2 justify-center">
+            <button
+              onClick={() => {
+                stopRealFaceCamera();
+                setScanningBiometric(null);
+              }}
+              className="px-6 py-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 hover:text-white font-bold text-[10px] uppercase tracking-widest rounded-xl transition"
+            >
+              Cancel Scan
+            </button>
+            <button
+              onClick={() => {
+                setScanResult('success');
+                stopRealFaceCamera();
+                const bUser = scanningBiometric;
+                setTimeout(() => {
+                  handleBiometricSuccess(bUser);
+                  setScanningBiometric(null);
+                }, 1200);
+              }}
+              className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] uppercase tracking-widest rounded-xl transition shadow-lg shadow-emerald-500/20"
+            >
+              Simulate Match
+            </button>
+          </div>
         </div>
       )}
 

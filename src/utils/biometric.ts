@@ -101,3 +101,31 @@ export const descriptorToArray = (descriptor: Float32Array): number[] => Array.f
 export const isFaceCaptureSupported = (): boolean => {
   return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
 };
+
+/**
+ * Detects a single face in an image element and returns its 128-point descriptor.
+ * Returns null if no face (or more than one face) is confidently detected.
+ */
+export const getFaceDescriptorFromImage = async (
+  image: HTMLImageElement
+): Promise<{ descriptor: Float32Array | null; error?: string }> => {
+  if (!modelsLoaded) {
+    return { descriptor: null, error: 'Face models not loaded yet.' };
+  }
+
+  try {
+    const detection = await faceapi
+      .detectSingleFace(image, new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.5 }))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!detection) {
+      return { descriptor: null, error: 'No face detected in the image. Please use a clear front-facing photo with good lighting.' };
+    }
+
+    return { descriptor: detection.descriptor };
+  } catch (err: any) {
+    console.error('Face detection from image error:', err);
+    return { descriptor: null, error: 'Face detection from image failed. Please try another image.' };
+  }
+};
