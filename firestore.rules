@@ -6,7 +6,7 @@ service cloud.firestore {
     
     function isSuperAdmin() { 
       return isSignedIn() && (
-        (request.auth.token.email != null && request.auth.token.email == 'sehgalbalpreet@gmail.com') ||
+        ('email' in request.auth.token && request.auth.token.email == 'sehgalbalpreet@gmail.com') ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
@@ -224,7 +224,7 @@ service cloud.firestore {
     // 5. Admins
     match /admins/{userId} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.token.email == 'sehgalbalpreet@gmail.com';
+      allow write: if isSignedIn() && ('email' in request.auth.token && request.auth.token.email == 'sehgalbalpreet@gmail.com');
     }
 
     // 6. Menu Items

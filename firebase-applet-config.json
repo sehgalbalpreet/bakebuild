@@ -3,8 +3,9 @@
   "appId": "1:158940324837:web:7152ece40bc1e05acdc50c",
   "apiKey": "AIzaSyCKG16IQBw1wKy91kIAFPdR9qjkbGJ9ems",
   "authDomain": "otpkreative.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-13c6c1c5-6ceb-49f4-a026-bc2eed84c0d7",
   "storageBucket": "otpkreative.firebasestorage.app",
   "messagingSenderId": "158940324837",
-  "measurementId": ""
+  "measurementId": "",
+  "oAuthClientId": "158940324837-v0atrb26t6vvs16afp688gv97r05bd3p.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
 }
